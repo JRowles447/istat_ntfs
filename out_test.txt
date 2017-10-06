@@ -1,7 +1,0 @@
-size of sector is: 1024
-size of sector is: 1024
-size of sector is: 1024
-size of sector is: 1024
-size of sector is: 1024
-size of sector is: 1024
-size of sector is: 512
