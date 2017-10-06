@@ -2,6 +2,13 @@ import struct
 import datetime
 
 def as_signed_le(bs):
+    """
+    Transform little endian byte string into an integer, unpacked according to size
+    utilizing struct package.
+
+    :param bs: hexadecimal little endian byte string
+    :return: int equivalent to hexadecimal string unpacked
+    """
     signed_format = {1: 'b', 2: 'h', 4: 'l', 8: 'q'}
     if len(bs) <= 0 or len(bs) > 8:
         raise ValueError()
@@ -17,8 +24,17 @@ def as_signed_le(bs):
 
 # added from istat_fat16
 def as_unsigned(bs, endian='<'):
+    """
+        Transform little endian byte string into an integer, unpacked according to size
+        utilizing struct package.
+
+        :param bs: hexadecimal little endian byte string
+        :return: int equivalent to hexadecimal string unpacked
+        """
     unsigned_format = {1: 'B', 2: 'H', 4: 'L', 8: 'Q'}
     if len(bs) <= 0 or len(bs) > 8:
+        print(len(bs)) # print the bad length
+        # check if there are invalid sectors for the image? Is that possible for NTFS
         raise ValueError()
     fill = '\x00'
     while len(bs) not in unsigned_format:
@@ -28,6 +44,17 @@ def as_unsigned(bs, endian='<'):
 
 
 def istat_ntfs(f, address, sector_size=512, offset=0):
+    """
+    Reports the istat information for the given addressed inode for file f.
+    Implementation of Brian Carriers istat for reporting information on directory
+    entries
+
+    :param f: ntfs image to be analyzed
+    :param address: the sector address to be traversed
+    :param sector_size: the byte size of the sectors in the image
+    :param offset: offset of the file system in the image (in sectors)
+    :return: istat information
+    """
     istat_result = []
     f.seek(offset*sector_size, 0)
     boot_sector = f.read(512)
@@ -40,13 +67,13 @@ def istat_ntfs(f, address, sector_size=512, offset=0):
     f.seek(address*1024, 1)
 
     istat_result.append('MFT Entry Header Values: ')
-    # TODO change the hardcode 1024 to entry num skipped
+
     master_file_table = f.read(1024)
     sequence_number = as_signed_le(master_file_table[16:18])
     istat_result.append('Entry: ' + str(address) + '        Sequence: ' + str(sequence_number))
 
-    #TODO change the allocation
     istat_result.append('$LogFile Sequence Number: ' + str(as_signed_le(master_file_table[8:16])))
+    #
     if((master_file_table[22:24] and 0x0001) == 0x0001):
         istat_result.append('Allocated File')
     else:
@@ -99,11 +126,9 @@ def istat_ntfs(f, address, sector_size=512, offset=0):
                     istat_result.append(x)
             if attribute_type == 128:
                 data_content = master_file_table[offset_to_attribute + attribute_content_offset: offset_to_attribute + attribute_length+2]
-                print('$DATA content: ' + str(data_content))
                 #TODO CHECK THAT THE FLAG IS ACCESSED CORRECTLY
                 if not resident_attribute:
                     data = parse_non_resident_data(data_content)
-                    print("continues")
                     size_of_attribute = as_unsigned(data_content[40:48])
                     size_of_attribute_init = as_unsigned(data_content[48:56])
                     footer_temp = []
@@ -116,7 +141,7 @@ def istat_ntfs(f, address, sector_size=512, offset=0):
                         footer_temp.append(' '.join(data[y * 8:]))
                     #TODO fix the hard coding thats happening here!
                     footer_string_corrected = (''.join(footer_temp))
-                    print('before the formatting')
+
                     # use size_of_attribute for the actual clusters
                     attribute_footer_ret_list.append('Type: $DATA (128-'+str(attribute_unique_id)+')   Name: N/A   Non-Resident   size: ' + str(size_of_attribute_init)+'  init_size: ' + str(size_of_attribute_init) + '\n')
                     for x in footer_temp:
@@ -131,20 +156,6 @@ def istat_ntfs(f, address, sector_size=512, offset=0):
         exit_count += 1
     for x in attribute_footer_ret_list:
         istat_result.append(x)
-
-
-
-
-
-
-
-
-
-
-    #TODO add the $DATA parse method
-    # istat_result.append('type: ' + str(attribute_type))
-    # istat_result.append('length: ' + str(attribute_length))
-    # print('the list is ' + str(istat_result))
     return istat_result
 
 def parse_std_info(bytes):
@@ -153,12 +164,8 @@ def parse_std_info(bytes):
     return_list.append('$STANDARD_INFORMATION Attribute Values: ')
     return_list.append('Flags: ' + flag_string)
     owner_id = as_signed_le(bytes[48:52])
-    # security_id = as_signed_le(bytes[52:56])
 
-    #MARC said to hard code to zero
     return_list.append('Owner ID: ' + str(0))
-    # Marc told us not to include security id
-    # return_list.append('Security ID: ' + str(security_id) + ' ()')
 
     #time parsing
     time_list = get_attribute_times(bytes[0:32])
@@ -175,11 +182,11 @@ def parse_file_name(bytes):
 
     # name information
     length_name = as_signed_le(bytes[64:65])
-    name_value = (bytes[66:66+length_name*2]).decode('utf-16') #is this correct?
+    name_value = (bytes[66:66+length_name*2]).decode('utf-16')
     return_list.append('Name: ' + str(name_value))
 
-    file_reference_sequence = as_signed_le(bytes[6:8]) #sequence of the parent directory
-    file_reference_mft_entry = as_signed_le(bytes[0:6]) #entry number of the parent directory
+    file_reference_sequence = as_signed_le(bytes[6:8]) # sequence of the parent directory
+    file_reference_mft_entry = as_signed_le(bytes[0:6]) # entry number of the parent directory
     return_list.append('Parent MFT Entry: ' + str(file_reference_mft_entry) + ' \tSequence: ' + str(file_reference_sequence))
     allocated_size = as_signed_le(bytes[40:48])
     actual_size = as_signed_le(bytes[48:56])
@@ -193,17 +200,15 @@ def parse_file_name(bytes):
 
 def parse_non_resident_data(bytes):
     return_list = []
-    starting_vcn = as_signed_le(bytes[16:24]) #signed?
+    starting_vcn = as_signed_le(bytes[16:24])
     ending_vcn = as_signed_le(bytes[24:32])
     offset_to_runlist = as_signed_le(bytes[32:34])
     runlist_bytes = bytes[offset_to_runlist:]
     runlist_clusters = read_runlist(runlist_bytes)
     allocated_size = as_signed_le(bytes[40:48])
     actual_size = as_signed_le(bytes[48:56])
-    print('before the loop')
     for x in runlist_clusters:
         return_list.append(x)
-    print('finished the return_list')
     return return_list
 
 def read_runlist(bytes):
@@ -215,27 +220,16 @@ def read_runlist(bytes):
     while bytes[index-1] != 0x00:
         run_length_byte_length = as_signed_le((bytes[index-1] & 0xf).to_bytes(1, 'little'))
         offset_byte_length = as_unsigned(((bytes[index-1] & 0xf0) >> 4).to_bytes(1, 'little'))
-        print('Entire run list is: \n' + str(bytes) + '\n')
-        print("first byte is: " + str(bytes[0]))
-        print(str(offset_byte_length) + " bytes for offset value")
-        print(str(run_length_byte_length) + " bytes for length value")
 
-        #358 highlighted orange
         length_of_run = as_unsigned(bytes[index: index+ run_length_byte_length])
-        #reading inthe run offset
-        print("the length of cluster run offset is " + str(index+run_length_byte_length) +" - " + str(index + run_length_byte_length + offset_byte_length))
         cluster_run_offset = as_signed_le(bytes[index+run_length_byte_length: index + run_length_byte_length + offset_byte_length])
-        print("cluster_run_offset is: " + str(cluster_run_offset))
-        print("length of the run:" + str(length_of_run))
-        #fake code
+
         counter = 0
         while counter < length_of_run:
-            # print("cluster: " + str(cluster_run_offset + counter))
             list_of_clusters.append(str(cluster_run_offset + old_offset+ counter))
             counter += 1
         index += run_length_byte_length + offset_byte_length+1
         old_offset += cluster_run_offset
-    print("done execution")
     return list_of_clusters
 
 def get_flag_values(flag_byte):
@@ -275,11 +269,6 @@ def get_attribute_times(bytes):
     time_list.append('File Modified:\t' + str(into_localtime_string(as_unsigned(bytes[8:16]))))
     time_list.append('MFT Modified:\t' + str(into_localtime_string(as_unsigned(bytes[16:24]))))
     time_list.append('Accessed:\t' + str(into_localtime_string(as_unsigned(bytes[24:32]))))
-    #
-    # time_list.append('Created:\t' + str(0))
-    # time_list.append('File Modified:\t' + str(0))
-    # time_list.append('MFT Modified:\t' + str(0))
-    # time_list.append('Accessed:\t' + str(0))
     return time_list
 
 def into_localtime_string(windows_timestamp):
